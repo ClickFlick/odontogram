@@ -1,6 +1,6 @@
 {
   "name": "@oozkul/dental-3d-angular",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "description": "Angular standalone component <dental-3d>: an interactive 3D dental chart (odontogram) with signal inputs and outputs, wrapping @oozkul/dental-3d.",
   "license": "MIT",
   "keywords": [

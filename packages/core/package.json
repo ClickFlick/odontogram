@@ -1,6 +1,6 @@
 {
   "name": "@oozkul/dental-3d",
-  "version": "0.1.0",
+  "version": "0.0.0",
   "description": "Interactive 3D dental chart (odontogram) for the web: clickable teeth, FDI numbering, per-tooth status, framework-free, built on three.js.",
   "license": "MIT",
   "type": "module",
