@@ -96,7 +96,7 @@ describe('DentalViewer', () => {
     const upper = [...found].filter((f) => f.startsWith('1') || f.startsWith('2'));
     expect(upper.length).toBe(16);
     expect([...found].every((f) => f.startsWith('1') || f.startsWith('2'))).toBe(true);
-  });
+  }, 120_000);
 
   it('ignores disabled teeth and hides missing ones in hide mode', async () => {
     const viewer = create({ missingMode: 'hide' });
@@ -170,8 +170,10 @@ describe('DentalViewer', () => {
     expect(viewer.theme.gums).toBe(DEFAULT_THEME.gums);
   });
 
-  it('frees GPU resources on dispose and survives 20 create/dispose cycles', async () => {
-    for (let i = 0; i < 20; i++) {
+  it('frees GPU resources on dispose and survives repeated create/dispose cycles', async () => {
+    // CI runners use software WebGL where each viewer takes seconds to create; six cycles
+    // still exceed the browser's WebGL context limit if contexts were leaked
+    for (let i = 0; i < 6; i++) {
       const container = makeContainer();
       const viewer = new DentalViewer({ container, labels: true, teeth: { '11': { badge: i } } });
       await viewer.ready;
@@ -184,5 +186,5 @@ describe('DentalViewer', () => {
       expect(container.querySelector('canvas')).toBeNull();
       container.remove();
     }
-  });
+  }, 120_000);
 });

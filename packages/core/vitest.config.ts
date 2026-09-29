@@ -16,7 +16,8 @@ export default defineConfig({
         test: {
           name: 'browser',
           include: ['tests/**/*.browser.test.ts'],
-          testTimeout: 30_000,
+          testTimeout: 60_000,
+          hookTimeout: 60_000,
           browser: {
             enabled: true,
             headless: true,
