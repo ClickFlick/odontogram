@@ -53,11 +53,11 @@ describe('default.glb', () => {
       const box = worldBox(meshes.get(fdi)!);
       if (isUpper(fdi)) {
         expect(box.min.y).toBeGreaterThanOrEqual(-0.05);
-        expect(box.min.y).toBeLessThan(0.6);
+        expect(box.min.y).toBeLessThan(1.2);
         expect(box.max.y).toBeGreaterThan(5);
       } else {
         expect(box.max.y).toBeLessThanOrEqual(0.05);
-        expect(box.max.y).toBeGreaterThan(-0.6);
+        expect(box.max.y).toBeGreaterThan(-1.2);
         expect(box.min.y).toBeLessThan(-5);
       }
     }
@@ -90,7 +90,7 @@ describe('default.glb', () => {
     expect(size.x).toBeLessThan(80);
     expect(size.z).toBeGreaterThan(45);
     expect(size.z).toBeLessThan(75);
-    expect(size.y).toBeGreaterThan(30);
+    expect(size.y).toBeGreaterThan(24);
     expect(size.y).toBeLessThan(60);
   });
 

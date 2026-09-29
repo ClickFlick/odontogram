@@ -7,16 +7,13 @@
   --border: #e2e8f0;
   --primary: #2f7bf5;
   --primary-text: #ffffff;
+  --viewer-bg: #eef1f5;
 
-  /* the library reads these */
-  --dental-tooth: #f2eee5;
-  --dental-gums: #e39a99;
-  --dental-hover: #5b9cff;
+  /* the library reads these; teeth, gums and status colours come from its defaults */
   --dental-selected: var(--primary);
   --dental-label: #334155;
+  --dental-label-background: rgba(255, 255, 255, 0.8);
   --dental-badge: var(--primary);
-  --dental-badge-text: #ffffff;
-  --dental-background: transparent;
   --dental-tooltip-bg: rgba(15, 23, 42, 0.92);
   --dental-tooltip-text: #ffffff;
 }
@@ -28,10 +25,10 @@
   --muted: #94a3b8;
   --border: #22304a;
   --primary: #6ea2ff;
+  --viewer-bg: #161d2b;
 
-  --dental-tooth: #e9e4d8;
-  --dental-gums: #c97b7c;
   --dental-label: #e2e8f0;
+  --dental-label-background: rgba(15, 23, 42, 0.65);
   --dental-tooltip-bg: rgba(226, 232, 240, 0.95);
   --dental-tooltip-text: #0f172a;
 }
@@ -187,13 +184,9 @@ select {
 
 .viewer {
   height: clamp(380px, 60vh, 640px);
-  border-radius: 16px;
+  border-radius: 12px;
   border: 1px solid var(--border);
-  background: radial-gradient(
-    ellipse at 50% 40%,
-    color-mix(in oklab, var(--card) 80%, var(--primary) 20%),
-    var(--card) 70%
-  );
+  background: var(--viewer-bg);
   touch-action: none;
 }
 .hint {

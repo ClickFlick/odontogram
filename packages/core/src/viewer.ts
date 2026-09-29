@@ -251,6 +251,16 @@ export class DentalViewer {
     this.refreshTheme();
   }
 
+  /**
+   * Re-reads the `--dental-*` CSS variables. Called automatically when the document, body or
+   * container change class/style attributes; call it yourself after changing variables on
+   * another ancestor or through a stylesheet swap.
+   */
+  refreshTheme(): void {
+    this.theme_ = this.computeTheme();
+    this.engine?.setTheme(this.theme_);
+  }
+
   setInteraction(opts: InteractionOptions): void {
     this.interaction_ = opts;
     this.engine?.setInteraction(opts);
@@ -561,11 +571,6 @@ export class DentalViewer {
     return mergeTheme(DEFAULT_THEME, fromCss, this.explicitTheme);
   }
 
-  private refreshTheme(): void {
-    this.theme_ = this.computeTheme();
-    this.engine?.setTheme(this.theme_);
-  }
-
   private observeTheme(doc: Document): void {
     if (typeof MutationObserver === 'function') {
       this.themeObserver = new MutationObserver(() => this.queueThemeRefresh());
@@ -575,6 +580,11 @@ export class DentalViewer {
       };
       this.themeObserver.observe(doc.documentElement, opts);
       if (doc.body) this.themeObserver.observe(doc.body, opts);
+      // variables are often set on the container itself (or toggled via its class)
+      this.themeObserver.observe(this.root, opts);
+      if (this.root.parentElement && this.root.parentElement !== doc.body) {
+        this.themeObserver.observe(this.root.parentElement, opts);
+      }
     }
     if (typeof matchMedia === 'function') {
       this.mediaQuery = matchMedia('(prefers-color-scheme: dark)');
@@ -587,7 +597,8 @@ export class DentalViewer {
   private queueThemeRefresh(): void {
     if (this.themeRefreshQueued || this.disposed) return;
     this.themeRefreshQueued = true;
-    requestAnimationFrame(() => {
+    // a macrotask: lets the style recalculation settle and coalesces bursts of mutations
+    setTimeout(() => {
       this.themeRefreshQueued = false;
       if (this.disposed) return;
       const next = this.computeTheme();
@@ -595,7 +606,7 @@ export class DentalViewer {
         this.theme_ = next;
         this.engine?.setTheme(next);
       }
-    });
+    }, 0);
   }
 }
 

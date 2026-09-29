@@ -85,19 +85,20 @@ interface ToothState {
 
 ## Methods
 
-| Method                                                                                        | Notes                                                                               |
-| --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `ready: Promise<void>`                                                                        | Resolves when the model is loaded.                                                  |
-| `setTeeth(states)` / `setTooth(fdi, s)`                                                       | Full replace (diffed) / single tooth (`null` clears).                               |
-| `select(fdi, { focus? })`                                                                     | Programmatic selection; `focus` flies the camera to it.                             |
-| `setView(view)`                                                                               | `front · left · right · upper-occlusal · lower-occlusal · reset`, animated ~400 ms. |
-| `setJaw('both' \| 'upper' \| 'lower')`                                                        | Hides the other jaw.                                                                |
-| `setOpen(boolean)`                                                                            | Animated mouth open/close.                                                          |
-| `setNumbering` · `setLabels` · `setMissingMode` · `setTheme` · `setInteraction` · `setLocale` | Change options at runtime.                                                          |
-| `on(event, handler): () => void`                                                              | `select · hover · ready · error`; returns an unsubscribe.                           |
-| `resize()`                                                                                    | Normally automatic (ResizeObserver).                                                |
-| `dispose()`                                                                                   | Releases everything.                                                                |
-| `selected`, `hovered`, `state`, `theme`, `availableTeeth`                                     | Read-only getters.                                                                  |
+| Method                                                                                        | Notes                                                                                                            |
+| --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `ready: Promise<void>`                                                                        | Resolves when the model is loaded.                                                                               |
+| `setTeeth(states)` / `setTooth(fdi, s)`                                                       | Full replace (diffed) / single tooth (`null` clears).                                                            |
+| `select(fdi, { focus? })`                                                                     | Programmatic selection; `focus` flies the camera to it.                                                          |
+| `setView(view)`                                                                               | `front · left · right · upper-occlusal · lower-occlusal · reset`, animated ~400 ms.                              |
+| `setJaw('both' \| 'upper' \| 'lower')`                                                        | Hides the other jaw.                                                                                             |
+| `setOpen(boolean)`                                                                            | Animated mouth open/close.                                                                                       |
+| `setNumbering` · `setLabels` · `setMissingMode` · `setTheme` · `setInteraction` · `setLocale` | Change options at runtime.                                                                                       |
+| `refreshTheme()`                                                                              | Re-reads the `--dental-*` variables (automatic for class/style changes on `<html>`, `<body>` and the container). |
+| `on(event, handler): () => void`                                                              | `select · hover · ready · error`; returns an unsubscribe.                                                        |
+| `resize()`                                                                                    | Normally automatic (ResizeObserver).                                                                             |
+| `dispose()`                                                                                   | Releases everything.                                                                                             |
+| `selected`, `hovered`, `state`, `theme`, `availableTeeth`                                     | Read-only getters.                                                                                               |
 
 `left`/`right` are the **patient's** sides, like FDI quadrants.
 
@@ -129,6 +130,7 @@ re-reads when the document's `class`/`data-theme` changes or the OS colour schem
   --dental-hover: #5b9cff;
   --dental-selected: #2f7bf5;
   --dental-label: #334155;
+  --dental-label-background: rgba(255, 255, 255, 0.78);
   --dental-badge: #2f7bf5;
   --dental-badge-text: #fff;
   --dental-background: transparent;

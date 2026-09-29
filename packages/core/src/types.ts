@@ -93,6 +93,8 @@ export interface Theme {
   selected: string;
   /** Text colour of number labels. */
   label: string;
+  /** Background of number labels (any CSS colour, may be translucent). */
+  labelBackground: string;
   /** Background colour of badges. */
   badge: string;
   /** Text colour of badges. */

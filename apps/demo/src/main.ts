@@ -141,6 +141,7 @@ const viewer = new DentalViewer({
 });
 
 viewer.on('error', (e) => console.error('dental-3d failed to load', e.error));
+if (import.meta.env.DEV) (window as unknown as { __dental: DentalViewer }).__dental = viewer;
 
 // toolbar --------------------------------------------------------------------------------------
 

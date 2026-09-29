@@ -2,7 +2,7 @@
  * Runs in headless Chromium (software WebGL) through @vitest/browser-playwright.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { DentalViewer } from '../src/index.js';
+import { DEFAULT_THEME, DentalViewer } from '../src/index.js';
 import type { Fdi, SelectEvent } from '../src/index.js';
 
 const viewers: DentalViewer[] = [];
@@ -167,7 +167,7 @@ describe('DentalViewer', () => {
     await viewer.ready;
     expect(viewer.theme.tooth).toBe('#ff0000');
     expect(viewer.theme.statuses.crown).toBe('rgb(0, 255, 0)');
-    expect(viewer.theme.gums).toBe('#e39a99');
+    expect(viewer.theme.gums).toBe(DEFAULT_THEME.gums);
   });
 
   it('frees GPU resources on dispose and survives 20 create/dispose cycles', async () => {

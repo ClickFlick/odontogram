@@ -32,6 +32,8 @@ interface MeshData {
   name: string;
   positions: Float32Array;
   normals: Float32Array;
+  /** Baked ambient-occlusion factor per vertex (0..1), stored as COLOR_0 grey. */
+  ao?: Float32Array;
   indices: Uint32Array;
   material: number;
   extras?: Record<string, unknown>;
@@ -47,6 +49,8 @@ const smoothstep = (a: number, b: number, x: number) => {
 };
 const spow = (x: number, e: number) => Math.sign(x) * Math.pow(Math.abs(x), e);
 const deg = (d: number) => (d * Math.PI) / 180;
+
+const cy0 = (phi: number) => Math.sin(phi);
 
 /** Point on the unit superellipse |x|^n + |z|^n = 1 at parameter angle theta. */
 function superellipse(theta: number, n: number): [number, number] {
@@ -157,6 +161,7 @@ interface Canonical {
   /** (u, y, v) triples: u mesiodistal (+ distal), y height from the neck, v buccolingual (+ buccal). */
   positions: Float32Array;
   indices: Uint32Array;
+  ao: Float32Array;
   tipY: number;
 }
 
@@ -182,11 +187,14 @@ function buildCrown(spec: ToothSpec, tpl: ShapeTemplate): Canonical {
   const au = spec.md / 2;
   const av = spec.bl / 2;
   const h = spec.height * tpl.tipHeight;
-  const uFloor = spec.type === 'incisor' ? 0.72 : 0.03;
+  const uFloor = spec.type === 'incisor' ? 0.78 : spec.type === 'canine' ? 0.22 : 0.05;
+  const vFloor = spec.type === 'incisor' ? 0.14 : spec.type === 'canine' ? 0.22 : 0.05;
 
   const bulge = (t: number) => tpl.neck + (1 - tpl.neck) * smoothstep(0, tpl.bulgeAt, t);
+  const neckV = tpl.neckV ?? tpl.neck;
+  const bulgeV = (t: number) => neckV + (1 - neckV) * smoothstep(0, tpl.bulgeAtV ?? tpl.bulgeAt, t);
   const ru = (t: number) => bulge(t) * closing(t, tpl.closeU, uFloor);
-  const rv = (t: number) => bulge(t) * closing(t, tpl.closeV);
+  const rv = (t: number) => bulgeV(t) * closing(t, tpl.closeV, vFloor);
 
   // re-parametrise t by profile arc length
   const F = 2000;
@@ -215,6 +223,7 @@ function buildCrown(spec: ToothSpec, tpl: ShapeTemplate): Canonical {
 
   const tan = Math.tan(deg(spec.tilt));
   const pos: number[] = [];
+  const aoList: number[] = [];
   for (let j = 0; j < M; j++) {
     const t = j === 0 ? 0 : tAt(j);
     const su = ru(t);
@@ -227,10 +236,15 @@ function buildCrown(spec: ToothSpec, tpl: ShapeTemplate): Canonical {
       const v = av * z * sv;
       const y = h * t + w * cuspField(u / au, v / av, tpl);
       pos.push(u, y, v + y * tan);
+      // baked occlusion: darker towards the gum line and on the contact (mesial/distal) faces
+      const gumline = 0.7 + 0.3 * smoothstep(0, 0.5, t);
+      const contact = 1 - 0.28 * Math.pow(Math.abs(x), 3) * (1 - 0.6 * t);
+      aoList.push(gumline * contact);
     }
   }
   const yTip = h + cuspField(0, 0, tpl);
   pos.push(0, yTip, yTip * tan);
+  aoList.push(tpl.fossa ? 0.9 : 1);
   const center = M * N;
 
   const idx: number[] = [];
@@ -250,9 +264,66 @@ function buildCrown(spec: ToothSpec, tpl: ShapeTemplate): Canonical {
     idx.push(a, center, b);
   }
 
+  const positions = new Float32Array(pos);
+  const indices = new Uint32Array(idx);
+  // Taubin smoothing (no shrinkage) removes any residual crease; the neck ring stays fixed
+  taubinSmooth(positions, indices, 3, new Set(Array.from({ length: N }, (_, i) => i)));
   let tipY = -Infinity;
-  for (let k = 1; k < pos.length; k += 3) tipY = Math.max(tipY, pos[k]!);
-  return { positions: new Float32Array(pos), indices: new Uint32Array(idx), tipY };
+  for (let k = 1; k < positions.length; k += 3) tipY = Math.max(tipY, positions[k]!);
+  return { positions, indices, ao: new Float32Array(aoList), tipY };
+}
+
+/** Taubin λ|μ smoothing over the vertex neighbourhood graph; `fixed` vertices do not move. */
+function taubinSmooth(
+  positions: Float32Array,
+  indices: Uint32Array,
+  iterations: number,
+  fixed: Set<number>,
+  lambda = 0.5,
+  mu = -0.53,
+): void {
+  const n = positions.length / 3;
+  const neighbours: number[][] = Array.from({ length: n }, () => []);
+  const link = (a: number, b: number) => {
+    if (!neighbours[a]!.includes(b)) neighbours[a]!.push(b);
+  };
+  for (let i = 0; i < indices.length; i += 3) {
+    const [a, b, c] = [indices[i]!, indices[i + 1]!, indices[i + 2]!];
+    link(a, b);
+    link(b, a);
+    link(b, c);
+    link(c, b);
+    link(a, c);
+    link(c, a);
+  }
+  const next = new Float32Array(positions.length);
+  const step = (factor: number) => {
+    next.set(positions);
+    for (let v = 0; v < n; v++) {
+      if (fixed.has(v)) continue;
+      const nb = neighbours[v]!;
+      if (nb.length === 0) continue;
+      let x = 0;
+      let y = 0;
+      let z = 0;
+      for (const w of nb) {
+        x += positions[w * 3]!;
+        y += positions[w * 3 + 1]!;
+        z += positions[w * 3 + 2]!;
+      }
+      x /= nb.length;
+      y /= nb.length;
+      z /= nb.length;
+      next[v * 3] = positions[v * 3]! + factor * (x - positions[v * 3]!);
+      next[v * 3 + 1] = positions[v * 3 + 1]! + factor * (y - positions[v * 3 + 1]!);
+      next[v * 3 + 2] = positions[v * 3 + 2]! + factor * (z - positions[v * 3 + 2]!);
+    }
+    positions.set(next);
+  };
+  for (let i = 0; i < iterations; i++) {
+    step(lambda);
+    step(mu);
+  }
 }
 
 interface Placement {
@@ -297,6 +368,7 @@ function placeTooth(
       name: fdi,
       positions: out,
       normals: computeNormals(out, indices),
+      ao: canon.ao,
       indices,
       material: 0,
       extras: { fdi, type: spec.type, jaw, quadrant, position: spec.position },
@@ -315,7 +387,6 @@ function buildGums(arch: Arch, teeth: Placement[], jaw: Jaw): MeshData {
   const tail = 3.5;
   const sEnd = distalEnd + tail;
   const { segments: K, spacing } = GUM_RESOLUTION;
-  const n = 2.4;
   const dir = jaw === 'lower' ? 1 : -1; // direction from gums towards the crowns
 
   // smooth per-arch-length profiles from the tooth table
@@ -341,32 +412,47 @@ function buildGums(arch: Arch, teeth: Placement[], jaw: Jaw): MeshData {
       const half = t.spec.md / 2 + spec.gap / 2;
       if (Math.abs(a - t.s) <= half) {
         const phi = Math.abs(a - t.s) / half;
-        return lo + (hi - lo) * smoothstep(0.45, 1, phi);
+        // gentle papilla: a raised cosine bump centred on the contact point
+        const w = smoothstep(0.35, 1, phi);
+        return lo + (hi - lo) * w * w * (3 - 2 * w);
       }
     }
     return lo;
   };
 
   const pos: number[] = [];
+  const gumAo: number[] = [];
   const rings = Math.ceil((2 * sEnd) / spacing);
+  // the model is cut by a flat plane a fixed distance beyond the deepest neck, like a scan
+  let deepest = 0;
+  for (const t of side) deepest = Math.max(deepest, Math.abs(t.neckY));
+  const yCut = -dir * (deepest + spec.gumHeight);
   for (let r = 0; r <= rings; r++) {
     const s = -sEnd + (2 * sEnd * r) / rings;
     const fr = arch.frame(s);
     const neck = sample(s, (t) => t.neckY);
     const bl = sample(s, (t) => t.spec.bl);
-    const gw = bl / 2 + spec.gumMargin;
-    const gh = spec.gumHeight / 2;
-    const top = neck + dir * cover(s);
-    const yc = top - dir * gh;
-    // round off the ends behind the last molar
+    // free gingiva hugs the crown just outside its cervical constriction, the alveolar
+    // ridge below it flares outwards
+    const wTop = (bl / 2) * 0.8 + spec.gumMargin;
+    const wBottom = wTop + 1.3;
+    const crest = neck + dir * spec.gumCover[0];
+    const papilla = cover(s) - spec.gumCover[0];
+    const height = Math.abs(crest - yCut);
+    // taper the ridge behind the last molar (width only – the cut plane stays flat)
     const over = Math.abs(s) - distalEnd;
-    const e = over <= 0 ? 1 : Math.sqrt(Math.max(0.0004, 1 - (over / tail) ** 2));
+    const e = over <= 0 ? 1 : Math.max(0.15, Math.sqrt(Math.max(0, 1 - (over / tail) ** 2)));
     for (let k = 0; k < K; k++) {
       const phi = (k / K) * Math.PI * 2;
-      const [cx, cy] = superellipse(phi, n);
-      const v = gw * e * cx;
-      const y = yc + gh * e * cy;
+      // rounded profile: soft top (crest), squarer bottom (cut)
+      const [cx, cy] = superellipse(phi, cy0(phi) >= 0 ? 2.2 : 5);
+      const yn = (cy + 1) / 2; // 0 at the cut plane, 1 at the crest
+      const w = wBottom + (wTop - wBottom) * smoothstep(0.35, 1, yn);
+      const v = w * e * cx;
+      const crestWeight = Math.max(0, cy) ** 2;
+      const y = yCut + dir * height * yn + dir * papilla * crestWeight * e;
       pos.push(fr.x + v * fr.nx, y, fr.z + v * fr.nz);
+      gumAo.push(1 - 0.25 * Math.max(0, cy) ** 3);
     }
   }
   const idx: number[] = [];
@@ -390,6 +476,7 @@ function buildGums(arch: Arch, teeth: Placement[], jaw: Jaw): MeshData {
       z += pos[(ring * K + k) * 3 + 2]!;
     }
     pos.push(x / K, y / K, z / K);
+    gumAo.push(1);
     return pos.length / 3 - 1;
   };
   const c0 = capCenter(0);
@@ -407,6 +494,7 @@ function buildGums(arch: Arch, teeth: Placement[], jaw: Jaw): MeshData {
     name: `gums_${jaw}`,
     positions,
     normals: computeNormals(positions, indices),
+    ao: new Float32Array(gumAo),
     indices,
     material: 1,
     extras: { jaw },
@@ -537,6 +625,27 @@ function writeGlb(meshes: MeshData[]): Uint8Array {
     );
     accessors.push({ bufferView: nrmView, componentType: 5126, count: vcount, type: 'VEC3' });
     const nrmAcc = accessors.length - 1;
+    let colorAcc = -1;
+    if (m.ao) {
+      const rgb = new Uint8Array(vcount * 4); // 4 bytes per vertex keeps the stride aligned
+      for (let i = 0; i < vcount; i++) {
+        const c = Math.round(Math.min(1, Math.max(0, m.ao[i]!)) * 255);
+        rgb[i * 4] = c;
+        rgb[i * 4 + 1] = c;
+        rgb[i * 4 + 2] = c;
+        rgb[i * 4 + 3] = 255;
+      }
+      const colView = pushView(rgb, 34962);
+      bufferViews[colView]!['byteStride'] = 4;
+      accessors.push({
+        bufferView: colView,
+        componentType: 5121,
+        normalized: true,
+        count: vcount,
+        type: 'VEC4',
+      });
+      colorAcc = accessors.length - 1;
+    }
     const useShort = vcount <= 65535;
     const idxData = useShort ? Uint16Array.from(m.indices) : m.indices;
     const idxView = pushView(
@@ -554,7 +663,11 @@ function writeGlb(meshes: MeshData[]): Uint8Array {
       name: m.name,
       primitives: [
         {
-          attributes: { POSITION: posAcc, NORMAL: nrmAcc },
+          attributes: {
+            POSITION: posAcc,
+            NORMAL: nrmAcc,
+            ...(colorAcc >= 0 ? { COLOR_0: colorAcc } : {}),
+          },
           indices: idxAcc,
           material: m.material,
           mode: 4,

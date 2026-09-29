@@ -73,8 +73,11 @@ export interface ShapeTemplate {
   exponent: number;
   /** Radial scale at the neck relative to the widest point. */
   neck: number;
-  /** t at which the crown reaches full width. */
+  /** t at which the crown reaches full width (mesiodistal). */
   bulgeAt: number;
+  /** Optional separate neck scale / bulge position for the buccolingual axis. */
+  neckV?: number;
+  bulgeAtV?: number;
   /** [tc, p] closing of the mesiodistal half-width. */
   closeU: [number, number];
   /** [tc, p] closing of the buccolingual half-width. */
@@ -92,53 +95,57 @@ export interface ShapeTemplate {
 export const TEMPLATES: Record<ToothType, ShapeTemplate> = {
   incisor: {
     exponent: 2.6,
-    neck: 0.8,
-    bulgeAt: 0.3,
+    neck: 0.68,
+    bulgeAt: 0.72,
+    neckV: 0.92,
+    bulgeAtV: 0.2,
     closeU: [0.82, 2.4],
-    closeV: [0.42, 1.25],
+    closeV: [0.42, 1.7],
     cusps: [],
     cuspStart: 1,
     tipHeight: 1,
   },
   canine: {
-    exponent: 2.3,
-    neck: 0.8,
-    bulgeAt: 0.3,
-    closeU: [0.55, 1.5],
-    closeV: [0.5, 1.4],
-    cusps: [{ u: 0, v: 0.05, height: 0.9, radius: 0.45 }],
-    cuspStart: 0.6,
-    tipHeight: 0.92,
+    exponent: 2.4,
+    neck: 0.72,
+    bulgeAt: 0.58,
+    neckV: 0.9,
+    bulgeAtV: 0.3,
+    closeU: [0.52, 1.8],
+    closeV: [0.5, 1.7],
+    cusps: [{ u: 0, v: 0.05, height: 0.5, radius: 0.5 }],
+    cuspStart: 0.7,
+    tipHeight: 0.96,
   },
   premolar: {
     exponent: 2.6,
-    neck: 0.82,
-    bulgeAt: 0.35,
-    closeU: [0.72, 3],
-    closeV: [0.72, 3],
+    neck: 0.78,
+    bulgeAt: 0.6,
+    closeU: [0.64, 2.6],
+    closeV: [0.64, 2.6],
     cusps: [
-      { u: 0, v: 0.5, height: 1.3, radius: 0.32 },
-      { u: 0, v: -0.5, height: 1.0, radius: 0.32 },
+      { u: 0, v: 0.42, height: 1.0, radius: 0.34 },
+      { u: 0, v: -0.42, height: 0.8, radius: 0.34 },
     ],
-    fossa: { depth: 0.7, radius: 0.22 },
-    cuspStart: 0.62,
-    tipHeight: 0.86,
+    fossa: { depth: 0.55, radius: 0.24 },
+    cuspStart: 0.6,
+    tipHeight: 0.9,
   },
   molar: {
-    exponent: 3.0,
-    neck: 0.84,
-    bulgeAt: 0.4,
-    closeU: [0.76, 3.5],
-    closeV: [0.76, 3.5],
+    exponent: 2.8,
+    neck: 0.8,
+    bulgeAt: 0.55,
+    closeU: [0.66, 2.8],
+    closeV: [0.66, 2.8],
     cusps: [
-      { u: -0.48, v: 0.48, height: 1.15, radius: 0.28 },
-      { u: 0.48, v: 0.48, height: 1.05, radius: 0.28 },
-      { u: -0.48, v: -0.48, height: 1.05, radius: 0.28 },
-      { u: 0.48, v: -0.48, height: 0.95, radius: 0.28 },
+      { u: -0.45, v: 0.45, height: 0.95, radius: 0.3 },
+      { u: 0.45, v: 0.45, height: 0.85, radius: 0.3 },
+      { u: -0.45, v: -0.45, height: 0.85, radius: 0.3 },
+      { u: 0.45, v: -0.45, height: 0.75, radius: 0.3 },
     ],
-    fossa: { depth: 0.9, radius: 0.3 },
-    cuspStart: 0.66,
-    tipHeight: 0.84,
+    fossa: { depth: 0.7, radius: 0.32 },
+    cuspStart: 0.62,
+    tipHeight: 0.9,
   },
 };
 
@@ -166,25 +173,25 @@ export const ARCHES: { upper: ArchSpec; lower: ArchSpec } = {
     halfWidth: 28.5,
     frontDepth: 30,
     flare: 0.1,
-    gap: 0.45,
-    gumHeight: 11,
-    gumMargin: 1.6,
-    gumCover: [0.7, 2.2],
-    occlusalClearance: 0.15,
+    gap: 0.5,
+    gumHeight: 3.5,
+    gumMargin: 0.35,
+    gumCover: [0.5, 1.2],
+    occlusalClearance: 0.4,
   },
   lower: {
     halfWidth: 26.5,
     frontDepth: 26,
     flare: 0.1,
-    gap: 0.45,
-    gumHeight: 11,
-    gumMargin: 1.6,
-    gumCover: [0.7, 2.2],
-    occlusalClearance: 0.15,
+    gap: 0.5,
+    gumHeight: 3.5,
+    gumMargin: 0.35,
+    gumCover: [0.5, 1.2],
+    occlusalClearance: 0.4,
   },
 };
 
 /** Tessellation of each crown: segments around × rings from neck to tip. */
-export const TOOTH_RESOLUTION = { segments: 40, rings: 22 };
+export const TOOTH_RESOLUTION = { segments: 36, rings: 22 };
 /** Tessellation of the gums: points around the tube × ring spacing along the arch (mm). */
 export const GUM_RESOLUTION = { segments: 28, spacing: 0.8 };

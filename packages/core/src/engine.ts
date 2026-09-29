@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { resolveModelName } from './model-naming.js';
 import { isFdi, isUpper } from './numbering.js';
 import type {
@@ -56,20 +57,23 @@ export interface Engine {
 
 interface ToothEntry {
   fdi: Fdi;
-  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>;
+  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>;
   /** World-space centre of the crown. */
   center: THREE.Vector3;
   /** Unit vector pointing away from the arch (buccal/labial). */
   outward: THREE.Vector3;
   /** Half extents of the crown's bounding box. */
   halfSize: THREE.Vector3;
-  own: THREE.MeshPhysicalMaterial | null;
+  own: THREE.MeshStandardMaterial | null;
+  /** Back-face shell drawn slightly larger than the crown: the hover/selection outline. */
+  outline: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | null;
   state: ToothState | undefined;
   label: THREE.Sprite | null;
   badge: THREE.Sprite | null;
 }
 
 const VIEW_DURATION = 400;
+const MAX_PIXEL_RATIO = 2;
 const OPEN_ANGLE = THREE.MathUtils.degToRad(22);
 const TAP_DISTANCE = 6;
 const TAP_TIME = 600;
@@ -94,8 +98,9 @@ class ThreeEngine implements Engine {
   private readonly labelsGroup = new THREE.Group();
   private readonly entries = new Map<Fdi, ToothEntry>();
   private readonly gums: THREE.Mesh[] = [];
-  private toothMaterial: THREE.MeshPhysicalMaterial;
+  private toothMaterial: THREE.MeshStandardMaterial;
   private gumMaterial: THREE.MeshStandardMaterial;
+  private environment: THREE.Texture;
   private theme: Theme | null = null;
   private missingMode: MissingMode = 'ghost';
   private hovered: Fdi | null = null;
@@ -115,6 +120,13 @@ class ThreeEngine implements Engine {
   private lastTap: { fdi: Fdi | null; t: number } = { fdi: null, t: 0 };
   private hoverPending: { x: number; y: number } | null = null;
   readonly frames_ = { count: 0 };
+  private pixelRatio = Math.min(
+    typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
+    MAX_PIXEL_RATIO,
+  );
+  private frameCost = 6;
+  private lastFrameTime = 0;
+  private lastAdapt = 0;
   private teethList: Fdi[] = [];
 
   constructor(private readonly host: EngineHost) {
@@ -124,8 +136,8 @@ class ThreeEngine implements Engine {
       alpha: true,
       powerPreference: 'high-performance',
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    // no tone mapping: theme colours render as specified (lights are kept below clipping)
     this.renderer.toneMapping = THREE.NoToneMapping;
     const canvas = this.renderer.domElement;
     canvas.style.display = 'block';
@@ -148,29 +160,32 @@ class ThreeEngine implements Engine {
     this.controls.maxDistance = 600;
     this.controls.addEventListener('change', () => this.invalidate());
 
-    this.toothMaterial = new THREE.MeshPhysicalMaterial({
-      color: 0xf2eee5,
-      roughness: 0.32,
+    // soft white enamel and matte gums under studio image-based light; baked ambient
+    // occlusion (vertex colours) gives depth between teeth without any runtime cost
+    this.toothMaterial = new THREE.MeshStandardMaterial({
+      color: 0xf3f1ea,
+      roughness: 0.36,
       metalness: 0,
-      clearcoat: 0.25,
-      clearcoatRoughness: 0.3,
+      envMapIntensity: 0.9,
     });
     this.gumMaterial = new THREE.MeshStandardMaterial({
-      color: 0xe39a99,
-      roughness: 0.55,
+      color: 0xc48f8c,
+      roughness: 0.7,
       metalness: 0,
-      transparent: true,
-      opacity: 0.96,
+      envMapIntensity: 0.4,
     });
 
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x8a94a6, 1.6);
-    const key = new THREE.DirectionalLight(0xffffff, 2.2);
-    key.position.set(40, 90, 140);
-    const fill = new THREE.DirectionalLight(0xffffff, 0.9);
-    fill.position.set(-80, -30, 100);
-    const back = new THREE.DirectionalLight(0xffffff, 0.6);
-    back.position.set(0, 40, -160);
-    this.scene.add(hemi, key, fill, back);
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    this.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    pmrem.dispose();
+    this.scene.environment = this.environment;
+    this.scene.environmentIntensity = 0.65;
+    const hemi = new THREE.HemisphereLight(0xffffff, 0x9aa3b2, 0.35);
+    const key = new THREE.DirectionalLight(0xffffff, 0.8);
+    key.position.set(60, 120, 150);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.25);
+    fill.position.set(-90, -30, 120);
+    this.scene.add(hemi, key, fill);
 
     this.lowerPivot.add(this.lower);
     this.model.add(this.upper, this.lowerPivot, this.labelsGroup);
@@ -227,6 +242,7 @@ class ThreeEngine implements Engine {
     });
 
     const bbox = new THREE.Box3();
+    let hasVertexColors = false;
     for (const src of meshes) {
       const name = resolveModelName(src);
       const geometry = bakeGeometry(src);
@@ -242,6 +258,7 @@ class ThreeEngine implements Engine {
       geometry.computeBoundingSphere();
       bbox.expandByPoint(box.min).expandByPoint(box.max);
 
+      if (geometry.hasAttribute('color')) hasVertexColors = true;
       if (isFdi(name)) {
         const mesh = new THREE.Mesh(geometry, this.toothMaterial);
         mesh.name = name;
@@ -254,6 +271,7 @@ class ThreeEngine implements Engine {
           outward: new THREE.Vector3(),
           halfSize,
           own: null,
+          outline: null,
           state: undefined,
           label: null,
           badge: null,
@@ -273,6 +291,13 @@ class ThreeEngine implements Engine {
       if (Array.isArray(m)) m.forEach((x) => x.dispose());
       else m?.dispose();
     });
+
+    if (hasVertexColors) {
+      this.toothMaterial.vertexColors = true;
+      this.gumMaterial.vertexColors = true;
+      this.toothMaterial.needsUpdate = true;
+      this.gumMaterial.needsUpdate = true;
+    }
 
     // arch centre for outward directions
     const archCenter = new THREE.Vector3();
@@ -432,7 +457,6 @@ class ThreeEngine implements Engine {
       if (!isJawVisible(e.fdi, this.upper.visible, this.lowerPivot.visible)) continue;
       targets.push(e.mesh);
     }
-    for (const g of this.gums) if (isVisibleInScene(g)) targets.push(g);
     const hits = this.raycaster.intersectObjects(targets, false);
     const first = hits[0];
     if (!first) return null;
@@ -441,13 +465,11 @@ class ThreeEngine implements Engine {
 
   resize(): void {
     if (this.disposed) return;
-    const el = this.host.element;
-    const w = Math.max(1, el.clientWidth);
-    const h = Math.max(1, el.clientHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.setSize(w, h, false);
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
+    this.pixelRatio = Math.min(
+      this.pixelRatio,
+      Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO),
+    );
+    this.applySize();
     this.invalidate();
   }
 
@@ -488,6 +510,8 @@ class ThreeEngine implements Engine {
     });
     this.toothMaterial.dispose();
     this.gumMaterial.dispose();
+    this.environment.dispose();
+    this.scene.environment = null;
     this.entries.clear();
     this.gums.length = 0;
     this.renderer.renderLists.dispose();
@@ -524,12 +548,12 @@ class ThreeEngine implements Engine {
 
     const hovered = this.hovered === e.fdi && !state?.disabled;
     const selected = this.selected === e.fdi;
+    this.updateOutline(e, selected ? 'selected' : hovered ? 'hover' : null);
+
     const tint = state?.tint;
     const statusColor =
       theme && status !== 'present' ? theme.statuses[status as keyof Theme['statuses']] : null;
-    const needsOwn = Boolean(
-      tint || statusColor || missing || hovered || selected || state?.disabled,
-    );
+    const needsOwn = Boolean(tint || statusColor || missing || state?.disabled);
 
     if (!needsOwn) {
       if (e.own) {
@@ -537,18 +561,19 @@ class ThreeEngine implements Engine {
         e.own = null;
       }
       e.mesh.material = this.toothMaterial;
-      e.mesh.scale.setScalar(1);
       e.mesh.renderOrder = 0;
       return;
     }
     if (!e.own) e.own = this.toothMaterial.clone();
     const m = e.own;
+    m.vertexColors = this.toothMaterial.vertexColors;
     m.color.copy(this.toothMaterial.color);
-    if (statusColor) m.color.set(statusColor);
+    // status tints keep a little enamel in them so they sit naturally next to white teeth
+    if (statusColor) m.color.set(statusColor).lerp(this.toothMaterial.color, 0.15);
     if (tint) m.color.set(tint);
     if (missing) {
       m.transparent = true;
-      m.opacity = theme?.ghostOpacity ?? 0.18;
+      m.opacity = theme?.ghostOpacity ?? 0.16;
       m.depthWrite = false;
       e.mesh.renderOrder = 2;
     } else {
@@ -557,22 +582,31 @@ class ThreeEngine implements Engine {
       m.depthWrite = true;
       e.mesh.renderOrder = 0;
     }
-    if (state?.disabled && !missing) {
-      m.color.lerp(new THREE.Color(0x888888), 0.35);
-    }
-    if (selected) {
-      m.emissive.set(theme?.selected ?? '#2f7bf5');
-      m.emissiveIntensity = 0.45;
-    } else if (hovered) {
-      m.emissive.set(theme?.hover ?? '#5b9cff');
-      m.emissiveIntensity = 0.3;
-    } else {
-      m.emissive.set(0x000000);
-      m.emissiveIntensity = 1;
-    }
+    if (state?.disabled && !missing) m.color.lerp(new THREE.Color(0x9ca3af), 0.45);
     m.needsUpdate = true;
     e.mesh.material = m;
-    e.mesh.scale.setScalar(selected ? 1.04 : 1);
+  }
+
+  private updateOutline(e: ToothEntry, kind: 'hover' | 'selected' | null): void {
+    if (!kind) {
+      if (e.outline) e.outline.visible = false;
+      return;
+    }
+    if (!e.outline) {
+      const mat = new THREE.MeshBasicMaterial({ side: THREE.BackSide, toneMapped: false });
+      e.outline = new THREE.Mesh(e.mesh.geometry, mat);
+      e.outline.renderOrder = -1;
+      e.mesh.add(e.outline);
+    }
+    const theme = this.theme;
+    e.outline.visible = e.mesh.visible;
+    e.outline.material.color.set(
+      kind === 'selected' ? (theme?.selected ?? '#2563eb') : (theme?.hover ?? '#60a5fa'),
+    );
+    // constant-ish thickness: grow by ~0.45 mm (selected) / 0.3 mm (hover)
+    const grow = kind === 'selected' ? 0.35 : 0.22;
+    const r = Math.max(e.halfSize.x, e.halfSize.y, e.halfSize.z);
+    e.outline.scale.setScalar(1 + grow / r);
   }
 
   private updateLabelVisibility(e: ToothEntry): void {
@@ -590,9 +624,10 @@ class ThreeEngine implements Engine {
       if (this.labels.enabled && this.theme) {
         const sprite = makeTextSprite(this.labels.format(e.fdi), {
           color: this.theme.label,
-          background: null,
+          background: this.theme.labelBackground || null,
           fontSize: 44,
-          heightMm: 3.2,
+          heightMm: 1.7,
+          depthTest: true,
         });
         e.label = sprite;
         this.labelsGroup.add(sprite);
@@ -614,7 +649,8 @@ class ThreeEngine implements Engine {
       color: this.theme.badgeText,
       background: this.theme.badge,
       fontSize: 40,
-      heightMm: 2.8,
+      heightMm: 1.6,
+      depthTest: true,
     });
     e.badge = sprite;
     this.labelsGroup.add(sprite);
@@ -629,18 +665,21 @@ class ThreeEngine implements Engine {
     for (const e of this.entries.values()) {
       if (!e.label && !e.badge) continue;
       const up = isUpper(e.fdi) ? 1 : -1;
-      const radial = Math.max(e.halfSize.x, e.halfSize.z) + 2.2;
+      const radial = Math.max(e.halfSize.x, e.halfSize.z) + 1.4;
       if (e.label) {
         tmp.copy(e.center).addScaledVector(e.outward, radial);
-        tmp.y -= up * 1.2;
+        tmp.y -= up * e.halfSize.y * 0.35;
         this.toWorld(e, tmp);
         e.label.position.copy(tmp);
       }
       if (e.badge) {
-        tmp.copy(e.center).addScaledVector(e.outward, radial + 0.5);
-        tmp.y += up * (e.halfSize.y + 1.4);
+        // same anchor as the label; the sprite's centre offset floats it above the label in
+        // screen space from every camera angle
+        tmp.copy(e.center).addScaledVector(e.outward, radial);
+        tmp.y -= up * e.halfSize.y * 0.35;
         this.toWorld(e, tmp);
         e.badge.position.copy(tmp);
+        e.badge.center.set(0.5, e.label ? -0.75 : 0.5);
       }
     }
   }
@@ -704,13 +743,51 @@ class ThreeEngine implements Engine {
     if (this.hoverPending) {
       const { x, y } = this.hoverPending;
       this.hoverPending = null;
-      this.host.onHover(this.pick(x, y));
+      const fdi = this.pick(x, y);
+      if (fdi !== this.hovered) this.host.onHover(fdi);
     }
+    const t0 = performance.now();
     this.renderer.render(this.scene, this.camera);
     this.frames_.count++;
     this.host.onFrame?.();
+    if (again) this.adaptResolution(performance.now() - t0, now);
+    else this.lastFrameTime = 0;
     if (again && this.visible) this.rafId = requestAnimationFrame(this.frame);
   };
+
+  /**
+   * Keeps interaction smooth on weak GPUs: while the camera moves, slow frames lower the
+   * pixel ratio in steps (down to 1); consistently fast frames raise it back to the cap.
+   */
+  private adaptResolution(renderMs: number, now: number): void {
+    // the rAF delta is the honest measure of jank (GPU work is asynchronous to render())
+    const delta = this.lastFrameTime ? now - this.lastFrameTime : 16.7;
+    this.lastFrameTime = now;
+    const cost = Math.max(renderMs, delta - 16.7);
+    this.frameCost = this.frameCost * 0.8 + cost * 0.2;
+    if (now - this.lastAdapt < 500) return;
+    const cap = Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO);
+    let next = this.pixelRatio;
+    if (this.frameCost > 12 && this.pixelRatio > 1) next = Math.max(1, this.pixelRatio - 0.25);
+    else if (this.frameCost < 3 && this.pixelRatio < cap)
+      next = Math.min(cap, this.pixelRatio + 0.25);
+    if (next !== this.pixelRatio) {
+      this.pixelRatio = next;
+      this.lastAdapt = now;
+      this.frameCost = 6;
+      this.applySize();
+    }
+  }
+
+  private applySize(): void {
+    const el = this.host.element;
+    const w = Math.max(1, el.clientWidth);
+    const h = Math.max(1, el.clientHeight);
+    this.renderer.setPixelRatio(this.pixelRatio);
+    this.renderer.setSize(w, h, false);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+  }
 
   private cancelFrame(): void {
     if (this.rafId) cancelAnimationFrame(this.rafId);
@@ -733,8 +810,23 @@ class ThreeEngine implements Engine {
 
   private readonly onPointerMove = (ev: PointerEvent): void => {
     if (ev.pointerType === 'touch') return;
+    // while dragging the camera, hover would only flicker
+    if (this.pointerDown) return;
     this.hoverPending = this.local(ev);
-    this.invalidate();
+    if (!this.rafId) this.rafId = requestAnimationFrame(this.hoverFrame);
+  };
+
+  /** Resolves a pending hover without rendering unless the hovered tooth changed. */
+  private readonly hoverFrame = (now: number): void => {
+    this.rafId = 0;
+    if (this.disposed) return;
+    if (this.hoverPending) {
+      const { x, y } = this.hoverPending;
+      this.hoverPending = null;
+      const fdi = this.pick(x, y);
+      if (fdi !== this.hovered) this.host.onHover(fdi);
+    }
+    if (this.animations.size) this.frame(now);
   };
 
   private readonly onPointerUp = (ev: PointerEvent): void => {
@@ -770,16 +862,6 @@ class ThreeEngine implements Engine {
 // -----------------------------------------------------------------------------------------
 // helpers
 
-/** True when the object and every ancestor are visible. */
-function isVisibleInScene(object: THREE.Object3D): boolean {
-  let cur: THREE.Object3D | null = object;
-  while (cur) {
-    if (!cur.visible) return false;
-    cur = cur.parent;
-  }
-  return true;
-}
-
 function isJawVisible(fdi: Fdi, upperVisible: boolean, lowerVisible: boolean): boolean {
   return isUpper(fdi) ? upperVisible : lowerVisible;
 }
@@ -807,6 +889,8 @@ function bakeGeometry(mesh: THREE.Mesh): THREE.BufferGeometry {
   geometry.setAttribute('position', pos);
   const nrm = src.getAttribute('normal') as THREE.BufferAttribute | undefined;
   if (nrm) geometry.setAttribute('normal', toFloatAttribute(nrm));
+  const col = src.getAttribute('color') as THREE.BufferAttribute | undefined;
+  if (col) geometry.setAttribute('color', toFloatAttribute(col, 3));
   if (src.index) geometry.setIndex(src.index.clone());
   geometry.applyMatrix4(mesh.matrixWorld);
   if (!nrm) geometry.computeVertexNormals();
@@ -814,8 +898,8 @@ function bakeGeometry(mesh: THREE.Mesh): THREE.BufferGeometry {
   return geometry;
 }
 
-function toFloatAttribute(attr: THREE.BufferAttribute): THREE.BufferAttribute {
-  const size = attr.itemSize;
+function toFloatAttribute(attr: THREE.BufferAttribute, itemSize?: number): THREE.BufferAttribute {
+  const size = Math.min(attr.itemSize, itemSize ?? attr.itemSize);
   const out = new Float32Array(attr.count * size);
   for (let i = 0; i < attr.count; i++) {
     out[i * size] = attr.getX(i);
@@ -831,12 +915,14 @@ interface SpriteStyle {
   background: string | null;
   fontSize: number;
   heightMm: number;
+  /** Depth-tested sprites disappear behind geometry, which keeps labels uncluttered. */
+  depthTest: boolean;
 }
 
 function makeTextSprite(text: string, style: SpriteStyle): THREE.Sprite {
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
-  const font = `600 ${style.fontSize}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+  const font = `500 ${style.fontSize}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
   let width = 64;
   if (ctx) {
     ctx.font = font;
@@ -875,11 +961,11 @@ function makeTextSprite(text: string, style: SpriteStyle): THREE.Sprite {
   const material = new THREE.SpriteMaterial({
     map: texture,
     transparent: true,
-    depthTest: false,
+    depthTest: style.depthTest,
     depthWrite: false,
   });
   const sprite = new THREE.Sprite(material);
-  sprite.renderOrder = 10;
+  sprite.renderOrder = style.depthTest ? 5 : 10;
   sprite.scale.set((style.heightMm * w) / h, style.heightMm, 1);
   return sprite;
 }
