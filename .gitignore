@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+.vite/
+*.log
+.DS_Store
+.eslintcache
+
+# generated from packages/core/model/default.glb at build time
+packages/core/src/model/default-model.generated.ts
+packages/core/model/raw.glb
+
+# playwright / vitest browser
+test-results/
+__screenshots__/

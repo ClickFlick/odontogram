@@ -1,0 +1,11 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.1.1/schema.json",
+  "changelog": ["@changesets/changelog-github", { "repo": "ClickFlick/odontogram" }],
+  "commit": false,
+  "fixed": [["@oozkul/dental-3d", "@oozkul/dental-3d-angular"]],
+  "linked": [],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": ["demo"]
+}

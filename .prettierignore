@@ -1,0 +1,7 @@
+node_modules
+dist
+package-lock.json
+*.glb
+CHANGELOG.md
+.changeset/*.md
+packages/core/src/model/default-model.generated.ts

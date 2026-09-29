@@ -1,0 +1,57 @@
+export { DentalViewer, loadDefaultModel } from './viewer.js';
+export {
+  ALL_TEETH,
+  UPPER_ARCH,
+  LOWER_ARCH,
+  archIndex,
+  assertFdi,
+  formatTooth,
+  fromPalmerText,
+  fromUniversal,
+  isFdi,
+  isLower,
+  isUpper,
+  jaw,
+  neighbour,
+  opposing,
+  position,
+  quadrant,
+  side,
+  toPalmer,
+  toPalmerText,
+  toUniversal,
+  toothType,
+} from './numbering.js';
+export { isGumName, resolveModelName, toothCodeOf } from './model-naming.js';
+export { STRINGS, resolveStrings, toothName } from './i18n.js';
+export {
+  DEFAULT_THEME,
+  THEME_CSS_VARS,
+  mergeTheme,
+  readThemeFromCss,
+  statusCssVar,
+} from './theme.js';
+export { TOOTH_STATUSES } from './types.js';
+export type {
+  DentalViewerOptions,
+  ErrorEvent,
+  Fdi,
+  HoverEvent,
+  InteractionOptions,
+  Jaw,
+  JawFilter,
+  MissingMode,
+  Numbering,
+  Quadrant,
+  ReadyEvent,
+  SelectEvent,
+  Strings,
+  TeethStates,
+  Theme,
+  ToothState,
+  ToothStatus,
+  ToothType,
+  ViewName,
+  ViewerEvents,
+  ViewerState,
+} from './types.js';

@@ -1,0 +1,39 @@
+{
+  "name": "odontogram-monorepo",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Monorepo for @oozkul/dental-3d and @oozkul/dental-3d-angular",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "build": "npm run build -w @oozkul/dental-3d && npm run build -w @oozkul/dental-3d-angular && npm run build -w demo",
+    "build:packages": "npm run build -w @oozkul/dental-3d && npm run build -w @oozkul/dental-3d-angular",
+    "dev": "npm run dev -w demo",
+    "test": "npm run test -w @oozkul/dental-3d",
+    "test:unit": "npm run test:unit -w @oozkul/dental-3d",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "typecheck": "tsc -p packages/core/tsconfig.json --noEmit && tsc -p apps/demo/tsconfig.json --noEmit",
+    "model:generate": "npm run model:generate -w @oozkul/dental-3d",
+    "changeset": "changeset",
+    "version": "changeset version && npm install --package-lock-only",
+    "release:tag": "node scripts/release-tag.mjs"
+  },
+  "devDependencies": {
+    "@changesets/changelog-github": "^1.0.1",
+    "@changesets/cli": "^3.0.3",
+    "@eslint/js": "^10.0.0",
+    "@types/node": "^22.15.0",
+    "eslint": "^10.11.0",
+    "prettier": "^3.9.9",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.71.0"
+  }
+}
